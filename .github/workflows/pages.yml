@@ -1,0 +1,43 @@
+# Publishes the live demo when the app's files change on main — e.g. after
+# AppNar Runner builds the app on your computer, or after your own edits.
+# (Builds made by the AppNar Factory workflow publish the demo themselves.)
+name: Live demo
+
+on:
+  push:
+    branches: [main]
+    paths: [index.html, styles.css, 'src/**']
+  workflow_dispatch:
+
+concurrency:
+  group: pages
+  # The Runner pushes a few commits in a row; only the last one matters.
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  deploy:
+    name: Canlı demo yayınlanıyor
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v5
+      - name: Site
+        run: |
+          mkdir -p dist
+          cp index.html dist/
+          [ -f styles.css ] && cp styles.css dist/
+          [ -d src ] && cp -r src dist/
+          touch dist/.nojekyll
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: dist
+      - id: deployment
+        uses: actions/deploy-pages@v4

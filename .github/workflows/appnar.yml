@@ -1,0 +1,87 @@
+# AppNar Factory — builds this app with AI inside your own GitHub account.
+# Runs when appnar/spec.json changes (AppNar pushes it) or on manual dispatch.
+# AI: your own cloud key, fetched from AppNar at run time with this workflow's
+# OIDC token (nothing is stored here). An AI_API_KEY repository secret (plus
+# optional AI_PROVIDER variable) overrides it.
+# When spec.json says "engine": "local", AppNar Runner builds the app on the
+# owner's computer instead; this workflow then does nothing and pages.yml
+# publishes the demo when the Runner pushes the code.
+name: AppNar Factory
+
+on:
+  push:
+    branches: [main]
+    paths: [appnar/spec.json]
+  workflow_dispatch:
+
+concurrency:
+  group: appnar-factory
+  # A newer request (rebuild) replaces a run that is still going.
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+jobs:
+  mode:
+    name: Üretim yeri
+    runs-on: ubuntu-latest
+    outputs:
+      engine: ${{ steps.read.outputs.engine }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          sparse-checkout: appnar/spec.json
+          sparse-checkout-cone-mode: false
+      - id: read
+        run: echo "engine=$(node -p "require('./appnar/spec.json').engine || 'cloud'")" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: Uygulamayı üret
+    needs: mode
+    if: needs.mode.outputs.engine != 'local'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      AI_API_KEY: ${{ secrets.AI_API_KEY }}
+      AI_PROVIDER: ${{ vars.AI_PROVIDER }}
+    steps:
+      - name: Hazırlık
+        uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - name: Git kimliği
+        run: |
+          git config user.name "${{ github.actor }}"
+          git config user.email "${{ github.actor_id }}+${{ github.actor }}@users.noreply.github.com"
+      # Drives the runner's preinstalled Chrome to click every button of the app.
+      - name: Tarayıcı testi hazırlığı
+        run: npm install --no-save --no-package-lock --no-audit --no-fund playwright-core@1.63.0
+      - name: Plan çıkarılıyor
+        run: node appnar/generate.mjs plan
+      - name: Mantık ve testler yazılıyor
+        run: node appnar/generate.mjs logic
+      - name: Arayüz tasarlanıyor
+        run: node appnar/generate.mjs ui
+      - name: Dokümantasyon yazılıyor
+        run: node appnar/generate.mjs docs
+      - name: Kalite kontrolü
+        run: node appnar/generate.mjs verify
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: dist
+
+  deploy:
+    name: Canlı demo yayınlanıyor
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

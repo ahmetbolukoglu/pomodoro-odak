@@ -1,0 +1,24 @@
+# Runs the unit tests on your own pushes and pull requests.
+name: CI
+
+on:
+  push:
+    branches: [main]
+    paths-ignore: [appnar/spec.json]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - name: Syntax check
+        run: for f in src/*.js; do if [ -f "$f" ]; then node --check "$f"; fi; done
+      - name: Unit tests
+        run: if ls tests/*.test.js >/dev/null 2>&1; then node --test "tests/*.test.js"; else echo "no tests yet"; fi
