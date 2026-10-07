@@ -1,0 +1,98 @@
+{
+  "title": "Pomodoro Odak",
+  "tagline": "25 dakikalık çalışma ve 5 dakikalık mola döngülerini sayan, günlük odak istatistiği tutan sayaç uygulaması",
+  "features": [
+    "25/5 dakikalık standart Pomodoro döngüsü ve özel süre ayarları",
+    "Görev bazlı oturum kaydı ve takibi",
+    "Günlük ve haftalık odak istatistikleri",
+    "Sesli bildirimler ve uyarılar",
+    "Seri (streak) takibi ve başarı göstergeleri",
+    "Veri senkronizasyonu ve yerel depolama",
+    "Karanlık/ışık modu desteği"
+  ],
+  "data_model": "Oturum kayıtları (session): id, taskId, startTime, endTime, duration, type (work/break), completed. Görev kayıtları (task): id, name, description, createdAt. İstatistik kayıtları (stats): date, workMinutes, breakMinutes, sessionsCompleted, streakDays.",
+  "screens": [
+    "Ana sayaç ekranı (çalışma/mola durumu)",
+    "Görev yönetimi paneli",
+    "Günlük ve haftalık istatistikler",
+    "Ayarlar ve süre yapılandırması",
+    "Sesli bildirim ayarları",
+    "Seri (streak) takibi ve başarı ekranı"
+  ],
+  "logic_api": [
+    {
+      "name": "createSession",
+      "signature": "(sessions, task, startTime, type) => updatedSessions",
+      "purpose": "Yeni bir oturum kaydı oluşturur"
+    },
+    {
+      "name": "completeSession",
+      "signature": "(sessions, sessionId, endTime) => updatedSessions",
+      "purpose": "Bir oturumu tamamlar ve bitiş zamanını kaydeder"
+    },
+    {
+      "name": "calculateDailyStats",
+      "signature": "(sessions, date) => stats",
+      "purpose": "Belirli bir gün için odak istatistiklerini hesaplar"
+    },
+    {
+      "name": "calculateWeeklyStats",
+      "signature": "(sessions, startDate) => stats",
+      "purpose": "Belirli bir hafta için odak istatistiklerini hesaplar"
+    },
+    {
+      "name": "calculateStreak",
+      "signature": "(sessions) => streakDays",
+      "purpose": "En uzun ardışık gün sayısını hesaplar"
+    },
+    {
+      "name": "validateDuration",
+      "signature": "(minutes) => isValid",
+      "purpose": "Süre değerinin geçerli olup olmadığını kontrol eder"
+    },
+    {
+      "name": "formatTime",
+      "signature": "(seconds) => formattedTime",
+      "purpose": "Saniye cinsinden süreyi dakika:saniye formatına çevirir"
+    },
+    {
+      "name": "getActiveSession",
+      "signature": "(sessions) => activeSession",
+      "purpose": "Aktif oturumu döndürür"
+    },
+    {
+      "name": "getSessionsByTask",
+      "signature": "(sessions, taskId) => taskSessions",
+      "purpose": "Belirli bir görevle ilişkili tüm oturumları döndürür"
+    },
+    {
+      "name": "getSessionsByDate",
+      "signature": "(sessions, date) => dateSessions",
+      "purpose": "Belirli bir tarih için oturumları döndürür"
+    },
+    {
+      "name": "calculateTotalWorkTime",
+      "signature": "(sessions) => totalMinutes",
+      "purpose": "Tüm oturumların toplam çalışma süresini hesaplar"
+    },
+    {
+      "name": "generateNotification",
+      "signature": "(type, timeRemaining) => notification",
+      "purpose": "Bildirim metni üretir (work/break bitim)"
+    }
+  ],
+  "test_cases": [
+    "Yeni bir oturum oluşturulduğunda doğru alanlarla oluşturulması",
+    "Bir oturumun tamamlanmasının doğru şekilde işaretlenmesi",
+    "Günlük istatistiklerin doğru hesaplanması",
+    "Haftalık istatistiklerin doğru hesaplanması",
+    "Seri (streak) sayısının doğru hesaplanması",
+    "Geçersiz süre değerlerinin doğru validate edilmesi",
+    "Saniye cinsinden sürenin doğru formatlanması",
+    "Aktif oturumun doğru bulunması",
+    "Görev bazlı oturumların doğru filtrelenmesi",
+    "Tarih bazlı oturumların doğru filtrelenmesi",
+    "Toplam çalışma süresinin doğru hesaplanması",
+    "Bildirim metninin doğru üretimi"
+  ]
+}
