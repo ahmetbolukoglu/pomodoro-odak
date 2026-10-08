@@ -1,98 +1,97 @@
 {
   "title": "Pomodoro Odak",
-  "tagline": "25 dakikalık çalışma ve 5 dakikalık mola döngülerini sayan, günlük odak istatistiği tutan sayaç uygulaması",
+  "tagline": "25 dakikalık çalışma ve 5 dakikalık mola döngülerini sayan, günlük odak istatistiği tutan sayaç.",
   "features": [
-    "25/5 dakikalık standart Pomodoro döngüsü ve özel süre ayarları",
+    "25/5 dakikalık standart Pomodoro döngüleri",
+    "Özel süre ayarlaması ile özelleştirilmiş döngüler",
     "Görev bazlı oturum kaydı ve takibi",
     "Günlük ve haftalık odak istatistikleri",
-    "Sesli bildirimler ve uyarılar",
-    "Seri (streak) takibi ve başarı göstergeleri",
-    "Veri senkronizasyonu ve yerel depolama",
-    "Karanlık/ışık modu desteği"
+    "Sesli bildirimler ile döngü sonu uyarıları",
+    "Seri (streak) takibi ile motivasyonu artırma"
   ],
-  "data_model": "Oturum kayıtları (session): id, taskId, startTime, endTime, duration, type (work/break), completed. Görev kayıtları (task): id, name, description, createdAt. İstatistik kayıtları (stats): date, workMinutes, breakMinutes, sessionsCompleted, streakDays.",
+  "data_model": "Saatlik kayıtlar (session) ve görev kayıtları (task) tutulur. Her session 3 alan içerir: startTime, endTime, taskId. Her task 2 alan içerir: name, color. Günlük istatistikler (dailyStats) her gün için çalışılan toplam süre ve tamamlanan döngü sayısı bilgilerini içerir.",
   "screens": [
-    "Ana sayaç ekranı (çalışma/mola durumu)",
-    "Görev yönetimi paneli",
-    "Günlük ve haftalık istatistikler",
-    "Ayarlar ve süre yapılandırması",
-    "Sesli bildirim ayarları",
-    "Seri (streak) takibi ve başarı ekranı"
+    "Ana sayaç ekranı (döngü sayacı, kontrol butonları)",
+    "Görev yönetimi paneli (ekle/düzenle/sil)",
+    "Günlük istatistik tablosu",
+    "Haftalık istatistik grafikleri",
+    "Ayarlar paneli (süre ayarları, ses bildirimleri, tema)",
+    "Seri (streak) takibi paneli"
   ],
   "logic_api": [
     {
       "name": "createSession",
-      "signature": "(sessions, task, startTime, type) => updatedSessions",
-      "purpose": "Yeni bir oturum kaydı oluşturur"
+      "signature": "({startTime, endTime, taskId}) => session",
+      "purpose": "Yeni bir çalışma oturumu oluşturur"
     },
     {
-      "name": "completeSession",
-      "signature": "(sessions, sessionId, endTime) => updatedSessions",
-      "purpose": "Bir oturumu tamamlar ve bitiş zamanını kaydeder"
+      "name": "createTask",
+      "signature": "({name, color}) => task",
+      "purpose": "Yeni bir görev oluşturur"
+    },
+    {
+      "name": "updateTask",
+      "signature": "({id, name, color}) => task",
+      "purpose": "Bir görevi günceller"
+    },
+    {
+      "name": "deleteTask",
+      "signature": "({id}) => boolean",
+      "purpose": "Bir görevi siler"
     },
     {
       "name": "calculateDailyStats",
-      "signature": "(sessions, date) => stats",
-      "purpose": "Belirli bir gün için odak istatistiklerini hesaplar"
+      "signature": "({sessions, date}) => dailyStats",
+      "purpose": "Belirli bir gün için istatistikleri hesaplar"
     },
     {
       "name": "calculateWeeklyStats",
-      "signature": "(sessions, startDate) => stats",
-      "purpose": "Belirli bir hafta için odak istatistiklerini hesaplar"
+      "signature": "({sessions, startDate}) => weeklyStats",
+      "purpose": "Belirli bir hafta için istatistikleri hesaplar"
     },
     {
       "name": "calculateStreak",
-      "signature": "(sessions) => streakDays",
-      "purpose": "En uzun ardışık gün sayısını hesaplar"
+      "signature": "({dailyStats}) => streak",
+      "purpose": "Günlük çalışılan gün sayısını hesaplar"
     },
     {
-      "name": "validateDuration",
-      "signature": "(minutes) => isValid",
-      "purpose": "Süre değerinin geçerli olup olmadığını kontrol eder"
+      "name": "getSessionsForDate",
+      "signature": "({sessions, date}) => sessions",
+      "purpose": "Belirli bir tarih için oturumları filtreler"
+    },
+    {
+      "name": "getSessionsForTask",
+      "signature": "({sessions, taskId}) => sessions",
+      "purpose": "Belirli bir görev için oturumları filtreler"
     },
     {
       "name": "formatTime",
-      "signature": "(seconds) => formattedTime",
-      "purpose": "Saniye cinsinden süreyi dakika:saniye formatına çevirir"
+      "signature": "({seconds}) => string",
+      "purpose": "Saniyeyi dakika:saniye formatına çevirir"
     },
     {
-      "name": "getActiveSession",
-      "signature": "(sessions) => activeSession",
-      "purpose": "Aktif oturumu döndürür"
+      "name": "validateSession",
+      "signature": "({startTime, endTime}) => boolean",
+      "purpose": "Oturumun geçerliliğini kontrol eder"
     },
     {
-      "name": "getSessionsByTask",
-      "signature": "(sessions, taskId) => taskSessions",
-      "purpose": "Belirli bir görevle ilişkili tüm oturumları döndürür"
-    },
-    {
-      "name": "getSessionsByDate",
-      "signature": "(sessions, date) => dateSessions",
-      "purpose": "Belirli bir tarih için oturumları döndürür"
-    },
-    {
-      "name": "calculateTotalWorkTime",
-      "signature": "(sessions) => totalMinutes",
-      "purpose": "Tüm oturumların toplam çalışma süresini hesaplar"
-    },
-    {
-      "name": "generateNotification",
-      "signature": "(type, timeRemaining) => notification",
-      "purpose": "Bildirim metni üretir (work/break bitim)"
+      "name": "getTaskById",
+      "signature": "({tasks, id}) => task",
+      "purpose": "ID'ye göre görev bulur"
     }
   ],
   "test_cases": [
-    "Yeni bir oturum oluşturulduğunda doğru alanlarla oluşturulması",
-    "Bir oturumun tamamlanmasının doğru şekilde işaretlenmesi",
-    "Günlük istatistiklerin doğru hesaplanması",
-    "Haftalık istatistiklerin doğru hesaplanması",
-    "Seri (streak) sayısının doğru hesaplanması",
-    "Geçersiz süre değerlerinin doğru validate edilmesi",
-    "Saniye cinsinden sürenin doğru formatlanması",
-    "Aktif oturumun doğru bulunması",
-    "Görev bazlı oturumların doğru filtrelenmesi",
-    "Tarih bazlı oturumların doğru filtrelenmesi",
-    "Toplam çalışma süresinin doğru hesaplanması",
-    "Bildirim metninin doğru üretimi"
+    "Yeni bir oturum oluşturulduğunda doğru alanlar doldurulur",
+    "Geçersiz zaman aralıklarında oturum oluşturulamaz",
+    "Görev silindiğinde ilişkili oturumlar da silinir",
+    "Günlük istatistikler doğru şekilde hesaplanır",
+    "Haftalık istatistikler doğru zaman dilimlerinde filtrelenir",
+    "Seri (streak) hesaplaması連續 günler için doğru çalışır",
+    "Sesli bildirimler belirtilen zamanlarda çalar",
+    "Görev adı ve rengi güncellenebilir",
+    "25/5 döngü süresi doğru şekilde uygulanır",
+    "Özel süre ayarlaması doğru şekilde işlenir",
+    "Tüm veriler localStorage'da doğru şekilde saklanır",
+    "Karanlık ve açık tema modları doğru şekilde işlenir"
   ]
 }
