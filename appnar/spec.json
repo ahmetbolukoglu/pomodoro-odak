@@ -13,8 +13,17 @@
   ],
   "language": "tr",
   "accent": "#39d353",
-  "revision": 3,
-  "requestedAt": "2026-10-08T12:57:23.051Z",
+  "revision": 4,
+  "requestedAt": "2026-10-08T13:27:36.730Z",
   "keyEndpoint": "https://wcsajvthqoyrircwlvob.supabase.co/functions/v1/ai-key",
-  "engine": "local"
+  "engine": "local",
+  "change": {
+    "text": "Fix every problem the browser check found.",
+    "issues": [
+      "On page load: Uncaught Error: Invalid date",
+      "Clicking \"Ekle\" throws: Uncaught Error: Invalid date",
+      "Clicking \"Başlat\" (#startStopButton) does nothing visible (no DOM change, dialog or download).",
+      "Clicking \"Sıfırla\" (#resetButton) does nothing visible (no DOM change, dialog or download)."
+    ]
+  }
 }

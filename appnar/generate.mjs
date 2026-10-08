@@ -78,7 +78,10 @@ PROVIDERS.local = {
   maxTokens: 8000,
   extra: {},
   gapMs: 0,
-  timeoutMs: 30 * 60_000,
+  timeoutMs: 45 * 60_000,
+  // Tokens arrive as they are produced: no HTTP timeout on long answers, and
+  // the owner sees which file is being written (see narrator()).
+  stream: true,
 };
 
 /** Installed Ollama models in our order of preference (OLLAMA_MODEL wins). */
@@ -282,7 +285,8 @@ export function usageEvents() {
 /** Best effort: a reporting problem must never fail a build. */
 export async function reportUsage(spec, env = process.env, fetcher = fetch) {
   const events = usageEvents();
-  if (!events.length || !spec.keyEndpoint || env.AI_API_KEY) return;
+  // Only GitHub Actions runs can report (OIDC); local builds have nothing to report.
+  if (!events.length || !spec.keyEndpoint || env.AI_API_KEY || !env.ACTIONS_ID_TOKEN_REQUEST_URL) return;
   try {
     const value = await oidcToken(env, fetcher);
     const res = await fetcher(spec.keyEndpoint, {
@@ -348,7 +352,85 @@ export function requestBody(p, model, system, user, jsonMode, plain) {
     max_tokens: p.maxTokens,
     ...(plain ? {} : (p.extra ?? {})),
     ...(jsonMode ? { response_format: { type: 'json_object' } } : {}),
+    ...(p.stream ? { stream: true } : {}),
     messages,
+  };
+}
+
+/**
+ * Reads an OpenAI-style server-sent event stream into the full answer. An
+ * error event inside the stream throws with `.status`.
+ */
+export async function readEventStream(res, onText = () => {}) {
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buf = '';
+  let text = '';
+  let finish = null;
+  let usage = null;
+  const take = (chunk) => {
+    for (const line of chunk.split('\n')) {
+      if (!line.startsWith('data:')) continue;
+      const data = line.slice(5).trim();
+      if (!data || data === '[DONE]') continue;
+      let j;
+      try {
+        j = JSON.parse(data);
+      } catch {
+        continue;
+      }
+      if (j.error) throw Object.assign(new Error(j.error.message ?? 'stream error'), { status: j.error.status ?? 500 });
+      const delta = j.choices?.[0]?.delta?.content;
+      if (delta) {
+        text += delta;
+        onText(text);
+      }
+      if (j.choices?.[0]?.finish_reason) finish = j.choices[0].finish_reason;
+      if (j.usage) usage = j.usage;
+    }
+  };
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buf += decoder.decode(value, { stream: true });
+    let i;
+    while ((i = buf.indexOf('\n\n')) >= 0) {
+      take(buf.slice(0, i));
+      buf = buf.slice(i + 2);
+    }
+  }
+  if (buf.trim()) take(buf);
+  return { text, finish, usage };
+}
+
+/**
+ * Narrates a streamed answer for the owner: which file is being written and,
+ * every few seconds, how far along it is ("  » write: src/app.js",
+ * "  » progress: src/app.js · 120 lines").
+ */
+export function narrator({ log = (l) => console.log(l), everyMs = 10_000, now = Date.now } = {}) {
+  let file = null;
+  let last = now();
+  let lastLines = 0;
+  return (text) => {
+    const marks = [...text.matchAll(/^=== FILE: (.+?) ===\s*$/gm)];
+    const mark = marks.at(-1);
+    const current = mark ? mark[1].trim() : null;
+    if (current && current !== file) {
+      file = current;
+      last = now();
+      lastLines = 0;
+      log(`  » write: ${file}`);
+      return;
+    }
+    if (now() - last < everyMs) return;
+    last = now();
+    const body = mark ? text.slice(mark.index + mark[0].length) : text;
+    const lines = body.trim() ? body.trim().split('\n').length : 0;
+    if (lines !== lastLines) {
+      lastLines = lines;
+      log(`  » progress: ${current ?? 'answer'} · ${lines} lines`);
+    }
   };
 }
 
@@ -382,6 +464,25 @@ export async function chat(provider, system, user, { json = false, fetcher = fet
           if (attempt === 3) break;
           await sleep(10_000 * (attempt + 1));
           continue;
+        }
+        if (p.stream && res.ok && /event-stream/.test(res.headers.get('content-type') ?? '')) {
+          try {
+            const out = await readEventStream(res, narrator());
+            if (out.text.trim()) {
+              if (p !== provider) console.log(`  answered by fallback ${p.name}/${model}`);
+              return out.text;
+            }
+            errors.push(`${p.name}/${model}: empty response (finish_reason: ${out.finish ?? 'unknown'})`);
+            break;
+          } catch (e) {
+            const status = e?.status;
+            errors.push(`${p.name}/${model}: ${status === 413 ? 'HTTP 413 ' : ''}stream error: ${e instanceof Error ? (e.cause?.message ?? e.message) : String(e)}`);
+            console.log(`  ${errors.at(-1)}`);
+            if (status === 413) break; // the prompt does not fit; retrying will not help
+            if (attempt === 3) break;
+            await sleep(10_000 * (attempt + 1));
+            continue;
+          }
         }
         const body = await res.text().catch(() => '');
         let usageData = null;
@@ -662,6 +763,7 @@ async function commit(message, paths) {
 }
 
 function runTests() {
+  say('run', 'unit tests (node --test)');
   // A parent test runner's context would swallow the child's exit code.
   const { NODE_TEST_CONTEXT: _ctx, ...env } = process.env;
   const r = spawnSync(process.execPath, ['--test', 'tests/*.test.js'], { encoding: 'utf8', timeout: 120_000, env });
@@ -674,6 +776,14 @@ function checkSyntax(path) {
 }
 
 const tail = (s, n) => (s.length > n ? `…${s.slice(-n)}` : s);
+
+/**
+ * One line of narration for the owner (the desktop studio shows these as
+ * "what I am doing now"): "  » <kind>: <detail>".
+ */
+export function say(kind, detail) {
+  console.log(`  » ${kind}: ${detail}`);
+}
 
 /** The first real error line of a test run, e.g. "SyntaxError: Unexpected token '<'". */
 export function firstError(output) {
@@ -726,6 +836,7 @@ async function phasePlan(provider, spec) {
     console.log(changeBlock(spec));
     return;
   }
+  say('think', 'planning features, data model and test cases');
   const text = await chat(
     provider,
     `${rules(spec)}\nYou are planning the app. Answer with one JSON object only.`,
@@ -787,6 +898,8 @@ async function testAndFix(provider, spec, files) {
     const testsOnly = round === MAX_FIX_ROUNDS;
     console.log(`  tests failed; fix round ${round}${testsOnly ? ' (tests only)' : ''}`);
     await pause(provider);
+    say('read', 'src/logic.js, tests/logic.test.js and the test output');
+    say('think', testsOnly ? 'fixing the tests to match the code' : 'finding the bug in the code or the tests');
     const fixed = await chat(
       provider,
       rules(spec),
@@ -824,6 +937,7 @@ ${LOGIC_FORMAT}`,
 async function phaseLogic(provider, spec) {
   if (isChange(spec)) return changeLogic(provider, spec);
   const plan = await loadPlan();
+  say('read', 'docs/PLAN.md (features, logic API, test plan)');
   const first = await chat(
     provider,
     rules(spec),
@@ -850,6 +964,7 @@ const UI_RULES = `UI wiring rules (these are checked automatically by clicking e
 
 /** Static checks plus a real-browser click test. `fatal` problems stop the build. */
 async function checkUi(exported) {
+  say('run', 'opening the app in a real browser and clicking every button');
   const html = await readText('index.html');
   const appJs = await readText('src/app.js');
   const fatal = [];
@@ -883,6 +998,8 @@ async function refineUi(provider, spec, exported, api) {
     const problems = [...check.fatal, ...check.issues];
     console.log(`  UI problems; fix round ${round}:\n    ${problems.join('\n    ')}`);
     await pause(provider);
+    say('read', 'index.html, src/app.js and the browser check results');
+    say('think', `fixing ${problems.length} UI problem(s)`);
     const reply = await chat(
       provider,
       rules(spec),
@@ -936,6 +1053,8 @@ async function phaseUi(provider, spec) {
   const exported = exportedNamesFromSource(logic);
   const api = plan.logic_api.map((f) => `${f.name}${f.signature.startsWith('(') ? f.signature : `: ${f.signature}`} — ${f.purpose}`).join('\n');
 
+  say('read', 'docs/PLAN.md and the exports of src/logic.js');
+  say('think', 'designing the screen layout and styles');
   // 1) Markup and styles.
   const shell = await chat(
     provider,
@@ -959,6 +1078,7 @@ Answer with exactly two blocks:
   await write('styles.css', sf['styles.css']);
   await pause(provider);
 
+  say('think', 'wiring buttons and forms to the business logic');
   // 2) Behaviour, written against the real markup and logic exports.
   const appJs = stripFence(
     await chat(
@@ -1009,6 +1129,8 @@ function changeSubject(spec) {
 
 async function changeLogic(provider, spec) {
   const files = { 'src/logic.js': await readText('src/logic.js'), 'tests/logic.test.js': await readText('tests/logic.test.js') };
+  say('read', 'src/logic.js and tests/logic.test.js');
+  say('think', 'checking whether the request changes the business rules');
   const reply = await chat(
     provider,
     rules(spec),
@@ -1040,6 +1162,8 @@ ${LOGIC_FORMAT}`,
 async function changeUi(provider, spec) {
   const exported = exportedNamesFromSource(await readText('src/logic.js'));
   const wantsLooks = /renk|tema|tasar[ıi]m|g[öo]r[üu]n[üu]m|font|yaz[ıi] tipi|bo[şs]luk|mobil|koyu|a[çc][ıi]k|css|style|colou?r|theme|design|look|layout|spacing|dark|light|responsive/i.test(spec.change?.text ?? '');
+  say('read', `index.html, src/app.js${wantsLooks ? ', styles.css' : ''}`);
+  say('think', 'making the requested change with the smallest edits');
   const reply = await chat(
     provider,
     rules(spec),
@@ -1094,6 +1218,7 @@ async function phaseDocs(provider, spec, env = process.env) {
   const demo = `https://${owner}.github.io/${name}/`;
   const tr = spec.language === 'tr';
 
+  say('think', 'writing the README introduction and feature list');
   const intro = stripFence(
     await chat(
       provider,
