@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pomodoro Odak</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="app-header">
+    <h1>Pomodoro Odak</h1>
+    <p>25 dakikalık çalışma ve 5 dakikalık mola döngülerini sayan, günlük odak istatistiği tutan sayaç uygulaması</p>
+  </header>
+
+  <main class="app-main">
+    <section class="timer-section">
+      <div class="timer-display" id="timerDisplay">25:00</div>
+      <div class="timer-controls">
+        <button id="startStopButton" class="btn btn-primary">Başlat</button>
+        <button id="resetButton" class="btn">Sıfırla</button>
+      </div>
+      <div class="task-selector">
+        <label for="taskSelect">Görev Seç:</label>
+        <select id="taskSelect" class="task-select">
+          <option value="">Görev Seçin</option>
+        </select>
+      </div>
+    </section>
+
+    <section class="stats-section">
+      <div class="stats-grid">
+        <div class="stat-card">
+          <h3>Günlük Süre</h3>
+          <p id="dailyDuration">0 dk</p>
+        </div>
+        <div class="stat-card">
+          <h3>Oturum Sayısı</h3>
+          <p id="sessionCount">0</p>
+        </div>
+        <div class="stat-card">
+          <h3>Seri</h3>
+          <p id="streakCount">0 gün</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="tasks-section">
+      <h2>Görevler</h2>
+      <form id="taskForm" class="task-form">
+        <input type="text" id="taskName" placeholder="Yeni görev adı" required>
+        <button type="submit" class="btn btn-secondary">Ekle</button>
+      </form>
+      <ul id="taskList" class="task-list"></ul>
+    </section>
+  </main>
+
+  <footer class="app-footer">
+    <p>Built with AppNar</p>
+  </footer>
+
+  <script type="module" src="src/app.js"></script>
+</body>
+</html>
