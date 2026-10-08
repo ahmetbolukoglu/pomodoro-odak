@@ -471,10 +471,31 @@ export async function chat(provider, system, user, { json = false, fetcher = fet
 
 // ───────────────────────────── parsing helpers ─────────────────────────────
 
-/** Removes a surrounding ``` fence if the model added one. */
-export function stripFence(text) {
-  const m = text.trim().match(/^```[\w-]*\n([\s\S]*?)\n?```$/);
-  return (m ? m[1] : text).trim() + '\n';
+const ENTITIES = { '&lt;': '<', '&gt;': '>', '&amp;': '&', '&quot;': '"', '&#39;': "'", '&#x27;': "'" };
+
+/**
+ * The file content inside whatever the model wrapped it in. Local models in
+ * particular add a ``` fence, a sentence before/after it, or <code>/<pre>
+ * tags (seen in a real build: tests/logic.test.js started with "<code>").
+ * Markdown keeps inner fences (only a fence around the whole text goes);
+ * HTML keeps its tags.
+ */
+export function stripFence(text, path = '') {
+  let t = text.trim();
+  const whole = t.match(/^```[\w.-]*[ \t]*\r?\n([\s\S]*?)\r?\n?```$/);
+  if (whole) t = whole[1];
+  else if (!/\.md$/i.test(path)) {
+    // Prose around a single fenced block: keep the block.
+    const blocks = [...t.matchAll(/^```[\w.-]*[ \t]*\r?\n([\s\S]*?)\r?\n```[ \t]*$/gm)];
+    if (blocks.length === 1) t = blocks[0][1];
+  }
+  if (!/\.(md|html?)$/i.test(path)) {
+    // <pre><code>…</code></pre> around the whole file, escaped like HTML.
+    const tag = t.trim().match(/^<(pre|code)\b[^>]*>\s*(?:<code\b[^>]*>)?([\s\S]*?)(?:<\/code>\s*)?<\/(?:pre|code)>$/i);
+    if (tag) t = tag[2].replace(/&(lt|gt|amp|quot|#39|#x27);/g, (e) => ENTITIES[e]);
+    else t = t.replace(/^\s*<(pre|code)\b[^>]*>\s*/i, '').replace(/\s*<\/(pre|code)>\s*$/i, '');
+  }
+  return t.trim() + '\n';
 }
 
 /** Parses "=== FILE: path ===" blocks. Unknown paths are ignored. */
@@ -486,7 +507,7 @@ export function parseFiles(text, allowed) {
     const path = m[1].trim();
     const end = i + 1 < marks.length ? marks[i + 1].index : text.length;
     const body = text.slice(m.index + m[0].length, end);
-    if (allowed.includes(path)) out[path] = stripFence(body);
+    if (allowed.includes(path)) out[path] = stripFence(body, path);
   });
   return out;
 }
@@ -654,6 +675,15 @@ function checkSyntax(path) {
 
 const tail = (s, n) => (s.length > n ? `…${s.slice(-n)}` : s);
 
+/** The first real error line of a test run, e.g. "SyntaxError: Unexpected token '<'". */
+export function firstError(output) {
+  const line = output
+    .split('\n')
+    .map((l) => l.trim())
+    .find((l) => /^[\w.]*(Error|Exception)( \[[\w_]+\])?:/.test(l));
+  return line ? line.slice(0, 200) : null;
+}
+
 // ───────────────────────────── prompts ─────────────────────────────
 
 const LANG = { tr: 'Turkish', en: 'English' };
@@ -746,9 +776,9 @@ ${plan.test_cases.map((t) => `- [ ] ${t}`).join('\n')}
 const LOGIC_FILES = ['src/logic.js', 'tests/logic.test.js'];
 const LOGIC_FORMAT = `Answer with exactly two blocks and nothing else:
 === FILE: src/logic.js ===
-<code>
+(full file content here: raw code only, no markdown fences, no <code> or <pre> tags)
 === FILE: tests/logic.test.js ===
-<code>`;
+(full file content here: raw code only, no markdown fences, no <code> or <pre> tags)`;
 
 /** Runs the unit tests and lets the model fix code or tests until they pass. */
 async function testAndFix(provider, spec, files) {
@@ -780,9 +810,15 @@ ${LOGIC_FORMAT}`,
   }
   if (!result.ok) {
     console.error(tail(result.output, 4000));
-    throw new Error('unit tests still fail after fix rounds');
+    const cause = firstError(result.output);
+    throw new Error(`unit tests still fail after fix rounds${cause ? ` (${cause})` : ''}`);
   }
-  console.log(result.output.split('\n').filter((l) => /^# (tests|pass|fail)/.test(l)).join('\n'));
+  const counts = result.output
+    .split('\n')
+    .map((l) => l.trim())
+    .filter((l) => /^(#|ℹ) (tests|pass|fail) \d+/.test(l))
+    .map((l) => l.slice(2));
+  console.log(`  tests passed: ${counts.join(', ') || 'ok'}`);
 }
 
 async function phaseLogic(provider, spec) {
@@ -866,9 +902,9 @@ ${await readText('src/app.js')}
 
 Fix every problem without removing features. Return src/app.js in full, and index.html in full only if you changed it:
 === FILE: src/app.js ===
-<code>
+(full file content here: raw code only, no markdown fences, no <code> or <pre> tags)
 === FILE: index.html ===
-<code, or omit this block>`,
+(full file content, raw code only; or omit this block)`,
     );
     const files = parseFiles(reply, ['src/app.js', 'index.html']);
     if (!files['src/app.js'] && !files['index.html']) break;
@@ -913,9 +949,9 @@ Write the markup and styles.
 
 Answer with exactly two blocks:
 === FILE: index.html ===
-<code>
+(full file content here: raw code only, no markdown fences, no <code> or <pre> tags)
 === FILE: styles.css ===
-<code>`,
+(full file content here: raw code only, no markdown fences, no <code> or <pre> tags)`,
   );
   const sf = parseFiles(shell, ['index.html', 'styles.css']);
   if (!sf['index.html'] || !sf['styles.css']) throw new Error('model did not return index.html and styles.css');
@@ -1022,7 +1058,7 @@ ${await readText('src/app.js')}
 ${wantsLooks ? `=== FILE: styles.css ===\n${await readText('styles.css')}\n` : '(styles.css exists; change it only if the request is about looks)\n'}
 Make the change with the smallest edits that fully solve it, keeping all other features. Return each file you changed IN FULL, using blocks like:
 === FILE: src/app.js ===
-<code>
+(full file content here: raw code only, no markdown fences, no <code> or <pre> tags)
 Allowed files: src/app.js, index.html${wantsLooks ? ', styles.css' : ''}.`,
   );
   const files = parseFiles(reply, wantsLooks ? ['src/app.js', 'index.html', 'styles.css'] : ['src/app.js', 'index.html']);
