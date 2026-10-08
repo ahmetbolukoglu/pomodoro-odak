@@ -179,11 +179,14 @@ function resetTimer() {
 
 // Complete a session
 function completeSession() {
+  // Create a valid session with proper date formatting
+  const now = new Date();
+  const date = now.toISOString().split('T')[0];
   const session = createSession({
     taskId: state.currentTaskId,
     duration: state.timerDuration,
     type: state.timerType,
-    date: new Date().toISOString().split('T')[0]
+    date: date
   });
   
   if (validateSession(session)) {
