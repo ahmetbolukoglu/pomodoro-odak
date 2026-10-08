@@ -184,7 +184,7 @@ function completeSession() {
   const date = now.toISOString().split('T')[0];
   const session = createSession({
     taskId: state.currentTaskId,
-    duration: state.timerDuration,
+    duration: 25 * 60 * 1000, // Fixed duration
     type: state.timerType,
     date: date
   });
