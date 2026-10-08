@@ -1,97 +1,98 @@
 {
   "title": "Pomodoro Odak",
-  "tagline": "25 dakikalık çalışma ve 5 dakikalık mola döngülerini sayan, günlük odak istatistiği tutan sayaç.",
+  "tagline": "25 dakikalık çalışma ve 5 dakikalık mola döngülerini sayan, günlük odak istatistiği tutan sayaç uygulaması",
   "features": [
-    "25/5 dakikalık standart Pomodoro döngüleri",
-    "Özel süre ayarlaması ile özelleştirilmiş döngüler",
+    "25/5 dakikalık standart Pomodoro döngüleri ve özel süre ayarları",
     "Görev bazlı oturum kaydı ve takibi",
     "Günlük ve haftalık odak istatistikleri",
-    "Sesli bildirimler ile döngü sonu uyarıları",
-    "Seri (streak) takibi ile motivasyonu artırma"
+    "Sesli bildirimler ve uyarılar",
+    "Serisi (streak) takibi ve başarı göstergeleri",
+    "Karanlık ve açık tema desteği",
+    "Veri kalıcılığı ve offline çalışabilme"
   ],
-  "data_model": "Saatlik kayıtlar (session) ve görev kayıtları (task) tutulur. Her session 3 alan içerir: startTime, endTime, taskId. Her task 2 alan içerir: name, color. Günlük istatistikler (dailyStats) her gün için çalışılan toplam süre ve tamamlanan döngü sayısı bilgilerini içerir.",
+  "data_model": "Saatlik oturum kayıtları (tarih, süre, görev, tür), günlük istatistikler (toplam süre, oturum sayısı, seri), görev kayıtları (ad, tamamlanma durumu)",
   "screens": [
-    "Ana sayaç ekranı (döngü sayacı, kontrol butonları)",
+    "Ana sayaç ekranı (geri sayım, durdur/çalıştır, görev seçimi)",
     "Görev yönetimi paneli (ekle/düzenle/sil)",
-    "Günlük istatistik tablosu",
-    "Haftalık istatistik grafikleri",
+    "Günlük istatistikler ekranı (çalışma süresi, oturum sayısı)",
+    "Haftalık istatistikler ekranı (haftalık seri, ortalama süre)",
     "Ayarlar paneli (süre ayarları, ses bildirimleri, tema)",
-    "Seri (streak) takibi paneli"
+    "Seri takibi ekranı (günlük başarı, uzunluk)"
   ],
   "logic_api": [
     {
       "name": "createSession",
-      "signature": "({startTime, endTime, taskId}) => session",
-      "purpose": "Yeni bir çalışma oturumu oluşturur"
+      "signature": "({taskId, duration, type, date}) => Session",
+      "purpose": "Yeni bir oturum kaydı oluşturur"
     },
     {
       "name": "createTask",
-      "signature": "({name, color}) => task",
+      "signature": "({name, completed}) => Task",
       "purpose": "Yeni bir görev oluşturur"
     },
     {
       "name": "updateTask",
-      "signature": "({id, name, color}) => task",
-      "purpose": "Bir görevi günceller"
-    },
-    {
-      "name": "deleteTask",
-      "signature": "({id}) => boolean",
-      "purpose": "Bir görevi siler"
+      "signature": "(taskId, updates) => Task",
+      "purpose": "Bir görevin bilgilerini günceller"
     },
     {
       "name": "calculateDailyStats",
-      "signature": "({sessions, date}) => dailyStats",
+      "signature": "(sessions, date) => DailyStats",
       "purpose": "Belirli bir gün için istatistikleri hesaplar"
     },
     {
       "name": "calculateWeeklyStats",
-      "signature": "({sessions, startDate}) => weeklyStats",
+      "signature": "(sessions, startDate) => WeeklyStats",
       "purpose": "Belirli bir hafta için istatistikleri hesaplar"
     },
     {
       "name": "calculateStreak",
-      "signature": "({dailyStats}) => streak",
-      "purpose": "Günlük çalışılan gün sayısını hesaplar"
+      "signature": "(sessions) => number",
+      "purpose": "En uzun seri süresini hesaplar"
     },
     {
       "name": "getSessionsForDate",
-      "signature": "({sessions, date}) => sessions",
+      "signature": "(sessions, date) => Session[]",
       "purpose": "Belirli bir tarih için oturumları filtreler"
     },
     {
       "name": "getSessionsForTask",
-      "signature": "({sessions, taskId}) => sessions",
+      "signature": "(sessions, taskId) => Session[]",
       "purpose": "Belirli bir görev için oturumları filtreler"
     },
     {
-      "name": "formatTime",
-      "signature": "({seconds}) => string",
-      "purpose": "Saniyeyi dakika:saniye formatına çevirir"
+      "name": "formatDuration",
+      "signature": "(milliseconds) => string",
+      "purpose": "Milisaniyeyi dakika:saniye formatına çevirir"
     },
     {
       "name": "validateSession",
-      "signature": "({startTime, endTime}) => boolean",
-      "purpose": "Oturumun geçerliliğini kontrol eder"
+      "signature": "(session) => boolean",
+      "purpose": "Oturum verisinin geçerliliğini kontrol eder"
     },
     {
-      "name": "getTaskById",
-      "signature": "({tasks, id}) => task",
-      "purpose": "ID'ye göre görev bulur"
+      "name": "validateTask",
+      "signature": "(task) => boolean",
+      "purpose": "Görev verisinin geçerliliğini kontrol eder"
+    },
+    {
+      "name": "getNotificationSettings",
+      "signature": "(settings) => NotificationSettings",
+      "purpose": "Bildirim ayarlarını döndürür"
     }
   ],
   "test_cases": [
-    "Yeni bir oturum oluşturulduğunda doğru alanlar doldurulur",
-    "Geçersiz zaman aralıklarında oturum oluşturulamaz",
-    "Görev silindiğinde ilişkili oturumlar da silinir",
-    "Günlük istatistikler doğru şekilde hesaplanır",
-    "Haftalık istatistikler doğru zaman dilimlerinde filtrelenir",
-    "Seri (streak) hesaplaması連續 günler için doğru çalışır",
-    "Sesli bildirimler belirtilen zamanlarda çalar",
-    "Görev adı ve rengi güncellenebilir",
-    "25/5 döngü süresi doğru şekilde uygulanır",
-    "Özel süre ayarlaması doğru şekilde işlenir",
-    "Tüm veriler localStorage'da doğru şekilde saklanır",
-    "Karanlık ve açık tema modları doğru şekilde işlenir"
+    "Yeni bir oturum oluşturulduğunda doğru verilerle oluşturulması",
+    "Görev adı boşken görev oluşturulamaması",
+    "Görev güncellendiğinde doğru alanların güncellenmesi",
+    "Günlük istatistiklerin doğru hesaplanması",
+    "Haftalık istatistiklerin doğru hesaplanması",
+    "Seri sayısı doğru şekilde hesaplanmalı",
+    "Belirli bir tarih için oturum filtreleme işlevi doğru çalışmalı",
+    "Belirli bir görev için oturum filtreleme işlevi doğru çalışmalı",
+    "Süre formatlama işlevi doğru dakika:saniye formatında dönmeli",
+    "Geçersiz oturum verisi için doğrulama işlevi false dönmeli",
+    "Geçersiz görev verisi için doğrulama işlevi false dönmeli",
+    "Bildirim ayarları doğru şekilde dönmeli"
   ]
 }
