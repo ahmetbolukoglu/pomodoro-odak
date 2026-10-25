@@ -1015,7 +1015,19 @@ const UI_RULES = `UI wiring rules (these are checked automatically by clicking e
 - Every button and control in index.html must do something visible when used: open/close a panel, change the list, show a message, download, etc.
 - Every element the script looks up must exist in index.html with exactly that id. Do NOT hide a missing element behind \`if (el)\` or \`?.\` — make the ids match instead.
 - Buttons inside a <form> that are not meant to submit it need type="button".
-- Show/hide with the \`hidden\` attribute or one consistent CSS class that exists in styles.css.`;
+- Show/hide with the \`hidden\` attribute or one consistent CSS class that exists in styles.css.
+- Call the logic functions exactly as src/logic.js expects (types included). JSON from localStorage has no Date objects: dates come back as strings, so convert them (new Date(value)) before passing them to functions that need a Date, and store dates as ISO strings.
+- An error while the page loads stops the rest of src/app.js, so every button wired after it does nothing: always fix load errors first.`;
+
+/** The problems list for a fix prompt, with the root cause first. */
+export function problemsBlock(problems) {
+  const load = problems.filter((p) => /^On page load:/.test(p));
+  const lines = problems.map((p) => `- ${p}`).join('\n');
+  if (!load.length) return lines;
+  return `${lines}
+
+Root cause first: the page-load error(s) above stop src/app.js before it wires the remaining buttons, so buttons that "do nothing" are most likely caused by that same error. Find where it is thrown (see "at …" — often a logic function called with the wrong type) and fix the call.`;
+}
 
 /** Static checks plus a real-browser click test. `fatal` problems stop the build. */
 async function checkUi(exported) {
@@ -1053,7 +1065,7 @@ async function refineUi(provider, spec, exported, api) {
     const problems = [...check.fatal, ...check.issues];
     console.log(`  UI problems; fix round ${round}:\n    ${problems.join('\n    ')}`);
     await pause(provider);
-    say('read', 'index.html, src/app.js and the browser check results');
+    say('read', 'index.html, src/app.js, src/logic.js and the browser check results');
     say('think', `fixing ${problems.length} UI problem(s)`);
     const files = await chatFiles(
       provider,
@@ -1061,12 +1073,15 @@ async function refineUi(provider, spec, exported, api) {
       `${specBlock(spec)}
 
 Automated checks found these problems in the app's UI:
-${problems.map((p) => `- ${p}`).join('\n')}
+${problemsBlock(problems)}
 
 ${UI_RULES}
 
 src/logic.js exports: ${exported.join(', ')}
 ${api ? `Logic API:\n${api}\n` : ''}
+src/logic.js (read only: fix src/app.js to call it correctly, do not change it):
+${await readText('src/logic.js')}
+
 === FILE: index.html ===
 ${await readText('index.html')}
 === FILE: src/app.js ===
@@ -1186,7 +1201,7 @@ function changeBlock(spec) {
   const c = spec.change ?? {};
   return `The owner asked for this change:
 ${c.text ? `"""${c.text}"""` : '(no free-text request)'}
-${c.issues?.length ? `\nProblems found by automated checks that must also be fixed:\n${c.issues.map((i) => `- ${i}`).join('\n')}` : ''}`;
+${c.issues?.length ? `\nProblems found by automated checks that must also be fixed:\n${problemsBlock(c.issues)}` : ''}`;
 }
 
 /** One-line commit subject from the owner's request. */
@@ -1230,7 +1245,7 @@ ${LOGIC_FORMAT}`,
 async function changeUi(provider, spec) {
   const exported = exportedNamesFromSource(await readText('src/logic.js'));
   const wantsLooks = /renk|tema|tasar[ıi]m|g[öo]r[üu]n[üu]m|font|yaz[ıi] tipi|bo[şs]luk|mobil|koyu|a[çc][ıi]k|css|style|colou?r|theme|design|look|layout|spacing|dark|light|responsive/i.test(spec.change?.text ?? '');
-  say('read', `index.html, src/app.js${wantsLooks ? ', styles.css' : ''}`);
+  say('read', `index.html, src/app.js, src/logic.js${wantsLooks ? ', styles.css' : ''}`);
   say('think', 'making the requested change with the smallest edits');
   const allowed = wantsLooks ? ['src/app.js', 'index.html', 'styles.css'] : ['src/app.js', 'index.html'];
   const files = await chatFiles(
@@ -1243,6 +1258,9 @@ ${changeBlock(spec)}
 ${UI_RULES}
 
 src/logic.js exports: ${exported.join(', ')}
+
+src/logic.js (read only: make src/app.js call it correctly):
+${await readText('src/logic.js')}
 
 === FILE: index.html ===
 ${await readText('index.html')}

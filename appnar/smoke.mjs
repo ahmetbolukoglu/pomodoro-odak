@@ -23,6 +23,22 @@ const TYPES = {
 const CHROMES = ['/usr/bin/google-chrome', '/usr/bin/google-chrome-stable', '/usr/bin/chromium-browser', '/usr/bin/chromium', 'C:/Program Files/Google/Chrome/Application/chrome.exe'];
 const MAX_TARGETS = 30;
 
+/**
+ * Where an error came from, in the app's own files: " (at calculateDailyStats
+ * src/logic.js:22 ← src/app.js:113)". Without this the model fixing the UI
+ * cannot tell that a "Invalid date" thrown in logic.js comes from a wrong call
+ * in app.js (seen in a real build that stayed broken for three rounds).
+ */
+export function whereFrom(stack = '') {
+  const frames = [];
+  for (const line of String(stack).split('\n')) {
+    const m = line.match(/at (?:([\w$.<>]+) \()?[^()\s]*?\/((?:src\/)?[\w.-]+\.js):(\d+):\d+\)?/);
+    if (m) frames.push(`${m[1] && m[1] !== '<anonymous>' ? `${m[1]} ` : ''}${m[2]}:${m[3]}`);
+    if (frames.length === 3) break;
+  }
+  return frames.length ? ` (at ${frames.join(' ← ')})` : '';
+}
+
 /** Minimal static file server for the repo root; resolves with its base URL. */
 export function serveStatic(root) {
   const base = resolve(root);
@@ -119,7 +135,7 @@ export async function smokeTest(root = '.', { chromePath = process.env.CHROME_PA
       const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
       const errors = [];
       let extra = 0; // dialogs and downloads count as "something happened"
-      page.on('pageerror', (e) => errors.push(`Uncaught ${e.name}: ${e.message}`));
+      page.on('pageerror', (e) => errors.push(`Uncaught ${e.name}: ${e.message}${whereFrom(e.stack)}`));
       // Resource failures are reported once, by the response handler below.
       page.on('console', (m) => m.type() === 'error' && !m.text().startsWith('Failed to load resource') && errors.push(`console.error: ${m.text().slice(0, 300)}`));
       page.on('response', (r) => {
