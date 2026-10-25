@@ -61,6 +61,12 @@ function loadState() {
       const data = JSON.parse(saved);
       state.sessions = data.sessions || [];
       state.tasks = data.tasks || [];
+      
+      // Convert date strings back to Date objects
+      state.sessions = state.sessions.map(session => ({
+        ...session,
+        date: new Date(session.date)
+      }));
     }
   } catch (e) {
     console.error('Failed to load state:', e);
@@ -71,7 +77,10 @@ function loadState() {
 function saveState() {
   try {
     localStorage.setItem('pomodoro-odak:v1', JSON.stringify({
-      sessions: state.sessions,
+      sessions: state.sessions.map(session => ({
+        ...session,
+        date: session.date.toISOString()
+      })),
       tasks: state.tasks
     }));
   } catch (e) {
@@ -110,13 +119,13 @@ function renderTasks() {
 
 // Render statistics
 function renderStats() {
-  const today = new Date().toISOString().split('T')[0];
+  const today = new Date();
   const todaySessions = getSessionsForDate(state.sessions, today);
   
   if (todaySessions.length > 0) {
     const dailyStats = calculateDailyStats(todaySessions, today);
-    dailyDuration.textContent = formatDuration(dailyStats.totalDuration);
-    sessionCount.textContent = dailyStats.sessionCount;
+    dailyDuration.textContent = formatDuration(dailyStats.totalWorkDuration);
+    sessionCount.textContent = dailyStats.workSessionsCount;
   } else {
     dailyDuration.textContent = '0 dk';
     sessionCount.textContent = '0';
@@ -181,12 +190,11 @@ function resetTimer() {
 function completeSession() {
   // Create a valid session with proper date formatting
   const now = new Date();
-  const date = now.toISOString().split('T')[0];
   const session = createSession({
     taskId: state.currentTaskId,
     duration: 25 * 60 * 1000, // Fixed duration
     type: state.timerType,
-    date: date
+    date: now
   });
   
   if (validateSession(session)) {

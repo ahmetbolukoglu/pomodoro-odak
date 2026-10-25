@@ -1,11 +1,6 @@
 {
-  "revision": 10,
-  "checkedAt": "2026-10-25T02:50:20.453Z",
+  "revision": 11,
+  "checkedAt": "2026-10-25T03:02:04.044Z",
   "browserCheck": "3 buttons clicked",
-  "issues": [
-    "On page load: Uncaught Error: Invalid date",
-    "Clicking \"Ekle\" throws: Uncaught Error: Invalid date",
-    "Clicking \"Başlat\" (#startStopButton) does nothing visible (no DOM change, dialog or download).",
-    "Clicking \"Sıfırla\" (#resetButton) does nothing visible (no DOM change, dialog or download)."
-  ]
+  "issues": []
 }
