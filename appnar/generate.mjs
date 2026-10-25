@@ -602,15 +602,70 @@ export function stripFence(text, path = '') {
 /** Parses "=== FILE: path ===" blocks. Unknown paths are ignored. */
 export function parseFiles(text, allowed) {
   const out = {};
-  const re = /^=== FILE: (.+?) ===\s*$/gm;
-  const marks = [...text.matchAll(re)];
+  const marks = fileMarks(text, allowed);
   marks.forEach((m, i) => {
-    const path = m[1].trim();
     const end = i + 1 < marks.length ? marks[i + 1].index : text.length;
-    const body = text.slice(m.index + m[0].length, end);
-    if (allowed.includes(path)) out[path] = stripFence(body, path);
+    const body = text.slice(m.index + m.length, end);
+    if (allowed.includes(m.path) && body.trim()) out[m.path] = stripFence(body, m.path);
   });
+  if (marks.length === 0) Object.assign(out, filesFromFences(text, allowed));
   return out;
+}
+
+const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/**
+ * Lines that start a file. The asked-for form is "=== FILE: path ===", but
+ * local models also write "### src/app.js", "**src/app.js**", "`index.html`:",
+ * "File: src/app.js" or "=== src/app.js ===". Only allowed paths count.
+ */
+function fileMarks(text, allowed) {
+  const strict = [...text.matchAll(/^=== FILE: (.+?) ===\s*$/gm)].map((m) => ({ index: m.index, length: m[0].length, path: m[1].trim() }));
+  if (strict.length) return strict;
+  if (!allowed.length) return [];
+  const paths = allowed.map(escapeRe).join('|');
+  const re = new RegExp(`^[ \\t>#*_\`=-]*(?:file\\s*:?\\s*)?[*_\`"']*(${paths})[*_\`"']*[ \\t:=*_\`-]*$`, 'gim');
+  return [...text.matchAll(re)].map((m) => ({ index: m.index, length: m[0].length, path: allowed.find((a) => a.toLowerCase() === m[1].toLowerCase()) }));
+}
+
+/**
+ * No file headers at all: fenced blocks are matched to files by language
+ * (html → the one .html file, css → the .css file, js → the only .js file).
+ */
+function filesFromFences(text, allowed) {
+  const out = {};
+  const byExt = (ext) => allowed.filter((a) => a.endsWith(ext));
+  const LANG = { html: '.html', htm: '.html', css: '.css', js: '.js', javascript: '.js', mjs: '.js' };
+  for (const m of text.matchAll(/^```([\w-]*)[ \t]*\r?\n([\s\S]*?)\r?\n```[ \t]*$/gm)) {
+    const ext = LANG[m[1].toLowerCase()];
+    const candidates = ext ? byExt(ext) : [];
+    if (candidates.length === 1 && !out[candidates[0]] && m[2].trim()) out[candidates[0]] = stripFence(m[2], candidates[0]);
+  }
+  return out;
+}
+
+/**
+ * A model call whose answer must contain files. If none can be read from it,
+ * the model is asked once more, with the exact format and what went wrong.
+ */
+export async function chatFiles(provider, system, user, allowed, { fetcher } = {}) {
+  const first = await chat(provider, system, user, fetcher ? { fetcher } : {});
+  const files = parseFiles(first, allowed);
+  if (Object.keys(files).length) return files;
+  console.log(`  » warn: the answer had no usable file blocks; asking again (it began with: ${JSON.stringify(first.trim().slice(0, 120))})`);
+  const again = await chat(
+    provider,
+    system,
+    `${user}
+
+IMPORTANT: your previous answer could not be used because it did not contain the files in the required format.
+Answer again with ONLY file blocks, each starting with its own header line, for example:
+=== FILE: ${allowed[0]} ===
+(the complete file)
+Allowed files: ${allowed.join(', ')}.`,
+    fetcher ? { fetcher } : {},
+  );
+  return parseFiles(again, allowed);
 }
 
 export function parseJson(text) {
@@ -1000,7 +1055,7 @@ async function refineUi(provider, spec, exported, api) {
     await pause(provider);
     say('read', 'index.html, src/app.js and the browser check results');
     say('think', `fixing ${problems.length} UI problem(s)`);
-    const reply = await chat(
+    const files = await chatFiles(
       provider,
       rules(spec),
       `${specBlock(spec)}
@@ -1022,10 +1077,23 @@ Fix every problem without removing features. Return src/app.js in full, and inde
 (full file content here: raw code only, no markdown fences, no <code> or <pre> tags)
 === FILE: index.html ===
 (full file content, raw code only; or omit this block)`,
+      ['src/app.js', 'index.html'],
     );
-    const files = parseFiles(reply, ['src/app.js', 'index.html']);
-    if (!files['src/app.js'] && !files['index.html']) break;
-    for (const [path, content] of Object.entries(files)) await write(path, content);
+    if (!files['src/app.js'] && !files['index.html']) {
+      console.log('  » warn: the model returned no files for the UI fix; keeping the current version');
+      break;
+    }
+    let edited = 0;
+    for (const [path, content] of Object.entries(files)) {
+      if (content === (await readText(path))) continue;
+      await write(path, content);
+      edited++;
+    }
+    if (!edited) {
+      console.log('  » warn: the model returned the files unchanged; stopping the UI fix rounds');
+      break;
+    }
+    console.log(`  changed: ${Object.keys(files).join(', ')}`);
     check = await checkUi(exported);
   }
   if (check.fatal.length) throw new Error(`src/app.js still has problems:\n${check.fatal.join('\n')}`);
@@ -1164,7 +1232,8 @@ async function changeUi(provider, spec) {
   const wantsLooks = /renk|tema|tasar[ıi]m|g[öo]r[üu]n[üu]m|font|yaz[ıi] tipi|bo[şs]luk|mobil|koyu|a[çc][ıi]k|css|style|colou?r|theme|design|look|layout|spacing|dark|light|responsive/i.test(spec.change?.text ?? '');
   say('read', `index.html, src/app.js${wantsLooks ? ', styles.css' : ''}`);
   say('think', 'making the requested change with the smallest edits');
-  const reply = await chat(
+  const allowed = wantsLooks ? ['src/app.js', 'index.html', 'styles.css'] : ['src/app.js', 'index.html'];
+  const files = await chatFiles(
     provider,
     rules(spec),
     `${specBlock(spec)}
@@ -1184,9 +1253,13 @@ Make the change with the smallest edits that fully solve it, keeping all other f
 === FILE: src/app.js ===
 (full file content here: raw code only, no markdown fences, no <code> or <pre> tags)
 Allowed files: src/app.js, index.html${wantsLooks ? ', styles.css' : ''}.`,
+    allowed,
   );
-  const files = parseFiles(reply, wantsLooks ? ['src/app.js', 'index.html', 'styles.css'] : ['src/app.js', 'index.html']);
-  for (const [path, content] of Object.entries(files)) await write(path, content);
+  // Only real edits count: an echo of the current file is not a change.
+  for (const [path, content] of Object.entries(files)) {
+    if (content === (await readText(path))) delete files[path];
+    else await write(path, content);
+  }
   console.log(`  changed: ${Object.keys(files).join(', ') || 'nothing'}`);
   await refineUi(provider, spec, exported, '');
   await commit(`fix: ${changeSubject(spec)}`, ['index.html', 'styles.css', 'src/app.js', 'appnar/report.json']);
